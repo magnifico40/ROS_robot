@@ -1,0 +1,28 @@
+lidar:
+  lidar_topic: /scan
+  frame_id: laser
+
+camera:
+  image_topic: /camera/image_raw
+  projected_topic: /camera/projected_image
+  image_size:
+    width: 640
+    height: 480
+  frame_id: camera
+
+chessboard:
+  pattern_size:
+    rows: 7
+    columns: 9
+  square_size_meters: 0.22
+
+general:
+  config_folder: /workspace/project/src/my_robot_system/config
+  camera_intrinsic_calibration: camera_intrinsic_calibration.yaml
+  camera_extrinsic_calibration: camera_extrinsic_calibration.yaml
+  slop: 0.1
+  max_file_saved: 10
+  keyboard_listener: True
+  get_intrinsics: True
+  get_extrinsics: True
+  
