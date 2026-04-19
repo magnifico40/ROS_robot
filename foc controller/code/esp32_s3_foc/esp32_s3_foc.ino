@@ -44,6 +44,7 @@
 #define STALL_VELOCITY_THRESHOLD 0.5f
 #define STALL_TIME_MS 700
 #define ENCODER_MAX_VEL_JUMP 80.0f
+#define BATTERY_CHECK_INTERVAL 100
 
 
 BLDCMotor motor = BLDCMotor(POLE_PAIRS);
@@ -62,6 +63,7 @@ String faultReason = "";
 float lastVelocity = 0.0f;
 unsigned long stallStart = 0;
 unsigned long lastBatCheck = 0;
+float filtered_vbat = 42.0f;
 unsigned long lastMasterMsg = 0;
 
 // encoder interrupts
@@ -87,8 +89,10 @@ void triggerFault(const char* reason) {
 }
 
 float readBatteryVoltage() {
-  float adc = analogRead(PIN_VBAT);
-  return (adc / ADC_MAX) * ADC_REF_VOLTAGE * VBAT_DIV_RATIO;
+  uint32_t mv = analogReadMilliVolts(PIN_VBAT);
+  float pin_voltage = (mv / 1000.0f) * VBAT_DIV_RATIO;
+  filtered_vbat = (0.9 * filtered_vbat) + (0.1 * pin_voltage);
+  return filtered_vbat;
 }
 
 // commands
@@ -253,12 +257,22 @@ void loop() {
       motor.target = 0;
     }
 
-    // check battery voltage every 0,5s
-    if (millis() - lastBatCheck > 500) {
+    static unsigned long undervoltage_timer = 0;
+    // check battery voltage
+    if (millis() - lastBatCheck > BATTERY_CHECK_INTERVAL) {
       lastBatCheck = millis();
       float vbat = readBatteryVoltage();
-      if (vbat < BATTERY_UNDERVOLTAGE) triggerFault("Battery - undervoltage");
+
       if (vbat > BATTERY_OVERVOLTAGE) triggerFault("Battery - overvoltage");
+      if (vbat < BATTERY_UNDERVOLTAGE) {
+        if (undervoltage_timer == 0) undervoltage_timer = millis();
+        if (millis() - undervoltage_timer > 3000) {
+          triggerFault("Battery - Undervoltage");
+        }
+      } else {
+        undervoltage_timer = 0;
+      }
+
     }
 
     // encoder jump detection
