@@ -45,6 +45,7 @@
 #define STALL_TIME_MS 700
 #define ENCODER_MAX_VEL_JUMP 80.0f
 #define BATTERY_CHECK_INTERVAL 100
+#define MAX_SPEED 10.0f // rad/s
 
 
 BLDCMotor motor = BLDCMotor(POLE_PAIRS);
@@ -210,8 +211,8 @@ void setup() {
   motor.linkCurrentSense(&current_sense);
 
   motor.controller = MotionControlType::velocity;
-  motor.voltage_limit = 15.0f;
-  motor.velocity_limit = 5.0f;
+  motor.voltage_limit = 20.0f;
+  motor.velocity_limit = MAX_SPEED;
   motor.current_limit = 10.0f;
 
   motor.voltage_sensor_align = 4.0f;
