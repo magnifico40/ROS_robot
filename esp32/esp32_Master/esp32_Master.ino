@@ -31,6 +31,43 @@ unsigned long lastRcReceive = 0;
 String inputString = "";
 String gpsBuffer = "";
 
+float accelX_offset = 0, accelY_offset = 0, accelZ_offset = 0;
+float gyroX_offset = 0, gyroY_offset = 0, gyroZ_offset = 0;
+
+void calibrateIMU() {
+    int samples = 500;
+    float sumAx = 0, sumAy = 0, sumAz = 0;
+    float sumGx = 0, sumGy = 0, sumGz = 0;
+    
+    for(int i = 0; i < 100; i++) {
+        sensors_event_t a, g, temp;
+        mpu.getEvent(&a, &g, &temp);
+        delay(2);
+    }
+
+    for (int i = 0; i < samples; i++) {
+        sensors_event_t a, g, temp;
+        mpu.getEvent(&a, &g, &temp);
+        
+        sumAx += a.acceleration.x;
+        sumAy += a.acceleration.y;
+        sumAz += a.acceleration.z;
+        sumGx += g.gyro.x;
+        sumGy += g.gyro.y;
+        sumGz += g.gyro.z;
+        
+        delay(5);
+    }
+    
+    accelX_offset = sumAx / samples;
+    accelY_offset = sumAy / samples;
+    accelZ_offset = (sumAz / samples) - 9.81f; 
+    
+    gyroX_offset = sumGx / samples;
+    gyroY_offset = sumGy / samples;
+    gyroZ_offset = sumGz / samples;
+}
+
 void OnDataRecv(const esp_now_recv_info *info, const uint8_t *data, int len) {
     if (len == sizeof(struct_message)) {
         memcpy(&incomingData, data, sizeof(incomingData));
@@ -54,7 +91,9 @@ void setup() {
     SerialGPS.begin(115200, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
     Wire.begin(IMU_SDA, IMU_SCL);
-    mpu.begin();
+    if(mpu.begin()) {
+        calibrateIMU();
+    }
 
     WiFi.mode(WIFI_STA);
     if (esp_now_init() == ESP_OK) {
@@ -120,10 +159,18 @@ void loop() {
         lastImu = millis();
         sensors_event_t a, g, temp;
         mpu.getEvent(&a, &g, &temp);
-        Serial.printf("IMU,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
-            a.acceleration.x, a.acceleration.y, a.acceleration.z,
-            g.gyro.x, g.gyro.y, g.gyro.z);
-    }
+        
+        float ax_clean = a.acceleration.x - accelX_offset;
+        float ay_clean = a.acceleration.y - accelY_offset;
+        float az_clean = a.acceleration.z - accelZ_offset;
+        
+        float gx_clean = g.gyro.x - gyroX_offset;
+        float gy_clean = g.gyro.y - gyroY_offset;
+        float gz_clean = g.gyro.z - gyroZ_offset;
+
+        Serial.printf("IMU,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
+            ax_clean, ay_clean, az_clean,
+            gx_clean, gy_clean, gz_clean);
 
     // steering mode (manual/autonomous)
     static unsigned long lastMotorUpdate = 0;
