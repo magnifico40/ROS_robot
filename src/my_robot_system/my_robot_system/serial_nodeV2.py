@@ -34,7 +34,7 @@ class RobotHardwareBridge(Node):
 
         # Publikacje
         self.pub_imu = self.create_publisher(Imu, 'imu/data_raw', 10)
-        self.pub_nmea = self.create_publisher(Sentence, 'nmea_sentence', 10)
+        self.pub_nmea = self.create_publisher(Sentence, '/nmea_sentence', 10)
         
         # Timer odczytu
         self.create_timer(0.01, self.read_serial_data)
