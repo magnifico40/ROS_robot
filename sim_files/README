@@ -1,0 +1,49 @@
+nalezy zainstalowac biblioteke Fields2Cover (minimum wersja 2.0):
+git clone https://github.com/Fields2Cover/Fields2Cover.git
+cd Fields2Cover
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+
+upewnijcie sie, ze dziala przez komende:
+python3 -c "import fields2cover as f2c; print('F2C działa! Wersja:', f2c.__version__ if hasattr(f2c, '__version__') else '2.0+')"
+
+
+DO SYMULACJI NALEZY UTWORZYC FOLDER NA WORKSPACE (jesli nie ma) i skopiowac folder src w folderze sim_files:
+mkdir -p ~/ros2_ws_diff/src
+cd ~/ros2_ws_diff/src
+git clone [LINK_DO_REPO] [FOLDER_Z_SYMULACJA]
+
+
+POTEM ZAINSTALOWAC ZALEZNOSCI I ZBUDOWAC:
+cd ~/ros2_ws_diff
+sudo rosdep init
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --packages-select obstacle_avoidance2
+source install/setup.bash
+
+
+URUCHAMIANIE SYMULACJI:
+
+te 3 linie powinny byc, wpisane w kazdym terminalu jaki otworzysz i przy zmianach w plikach, choc wiem ze mozna to usprawnic/skrocic
+cd ~/ros2_ws_diff
+source /opt/ros/foxy/setup.bash
+source install/setup.bash
+
+ros2 launch obstacle_avoidance2 sim.launch.py  #odpali gazebo, powinien byc widoczny model
+
+otworz nowy terminal
+ros2 run obstacle_avoidance2 planner
+
+otworz nowy terminal
+ros2 run obstacle_avoidance2 pursuit
+
+robot powinien ruszyc
+
+
+NAJWAZNIEJSZE PLIKI .py SA W obstacle_avoidance2 I NAZYWAJA SIE planner_node (odpowiedzialny za tworzenie trasy) I pursuit_node (logika podazania za stworzona trasa)
+MODEL JEST W urdf/robot.xacro
+ 
