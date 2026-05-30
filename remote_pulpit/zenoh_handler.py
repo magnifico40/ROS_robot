@@ -13,6 +13,7 @@ class ZenohHandler(QObject):
     pqt_sig_frame          = pyqtSignal(np.ndarray)
     pqt_sig_status         = pyqtSignal(str)
     pqt_sig_connection_lost = pyqtSignal()
+    pqt_sig_gps = pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -42,6 +43,7 @@ class ZenohHandler(QObject):
 
             #subscribers
             self._sub_camera = self.session_tcp.declare_subscriber("camera/image_raw/compressed",self._on_camera_frame)
+            self._sub_gps = self.session_tcp.declare_subscriber("rt/robot_position", self._on_robot_gps)
 
             #publishers
             self._publishers["waypoints"] = self.session_tcp.declare_publisher("rt/waypoints")
@@ -80,7 +82,16 @@ class ZenohHandler(QObject):
         arr = np.frombuffer(payload[idx:], np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if img is not None:
-            self.pqt_sig_frame.emit(img) 
+            self.pqt_sig_frame.emit(img)
+
+    def _on_robot_gps(self, sample):
+        payload = bytes(sample.payload)
+        if len(payload) >= 28:
+            try:
+                _, lat, lon, z = struct.unpack('<4sddd', payload[:28])
+                self.pqt_sig_gps.emit(lat, lon)
+            except Exception as e:
+                print(f"Error GPS: {e}")
     
     def _publish(self, key: str, payload: bytes):
         with self._lock:

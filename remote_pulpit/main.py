@@ -348,6 +348,18 @@ class MapApp(QWidget):
         #    with open(path, "w") as f:
         #        json.dump(data, f, indent=2)
 
+    def update_robot_marker(self, lat, lon):
+        if hasattr(self, "robot_marker"):
+            self.map.removeLayer(self.robot_marker)
+
+        self.robot_marker = L.marker([lat, lon])
+        self.robot_marker.bindTooltip("Chwast")
+        self.robot_marker.addTo(self.map)
+
+        if not hasattr(self, "map_centered_on_robot"):
+            self.map.setView([lat, lon], 18)
+            self.map_centered_on_robot = True
+
 class Dashboard(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -357,9 +369,9 @@ class Dashboard(QMainWindow):
 
         self.organise_UI()
 
-        
         self.zenoh.pqt_sig_status.connect(self._on_status) #status signal for info
         self.zenoh.pqt_sig_frame.connect(self._on_frame) #video frame
+        self.zenoh.pqt_sig_gps.connect(self.map_widget.update_robot_marker)
 
     def organise_UI(self):
         def _organise_main_window():
@@ -385,8 +397,7 @@ class Dashboard(QMainWindow):
             self.stop_widget = QWidget()
             stop_layout = QVBoxLayout(self.stop_widget)
             self.stop_button = RoundButton("STOP")
-           
-            
+
             self.stop_button.clicked.connect(self.send_stop)
             stop_layout.addWidget(self.stop_button, alignment=Qt.AlignmentFlag.AlignCenter)
            
