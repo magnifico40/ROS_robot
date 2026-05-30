@@ -4,25 +4,21 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu
 import serial
-import time
+import math
 
 class RcCarDriver(Node):
     def __init__(self):
         super().__init__('rc_car_driver')
 
-        #declare_parameter / get-parameter - Pozwlaja na zmiane przy uruchamianiu z poziomu terminala
-        self.declare_parameter('serial_port', '/dev/ttyUSB0')
+        self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('baud_rate', 115200)
         
-        # Konfiguracja serwa (czas trwania impulsu w us)
-        self.declare_parameter('servo_min_us', 1200)    # Maks w prawo (lub lewo)
-        self.declare_parameter('servo_center_us', 1500) # Środek
-        self.declare_parameter('servo_max_us', 1800)    # Maks w lewo (lub prawo)
+        self.declare_parameter('servo_min_us', 1200)
+        self.declare_parameter('servo_center_us', 1500)
+        self.declare_parameter('servo_max_us', 1800)
         
-        # Konfiguracja silnika (PWM)
-        self.declare_parameter('motor_max_pwm', 255)    # Maks moc
+        self.declare_parameter('motor_max_pwm', 255)
 
-        # Pobranie parametrów
         self.serial_port = self.get_parameter('serial_port').value
         self.baud_rate = self.get_parameter('baud_rate').value
         self.servo_min = self.get_parameter('servo_min_us').value
@@ -30,7 +26,6 @@ class RcCarDriver(Node):
         self.servo_max = self.get_parameter('servo_max_us').value
         self.motor_max = self.get_parameter('motor_max_pwm').value
 
-        # Połączenie Serial
         try:
             self.ser = serial.Serial(self.serial_port, self.baud_rate, timeout=0.1)
             self.get_logger().info(f'Połączono z ESP32 na {self.serial_port}')
@@ -38,47 +33,42 @@ class RcCarDriver(Node):
             self.get_logger().error(f'Błąd portu szeregowego: {e}')
             exit(1)
 
-        # Subskrypcja cmd_vel (sterowanie z klawiatury/nav2)
         self.subscription = self.create_subscription(
             Twist,
             'cmd_vel',
             self.cmd_vel_callback,
             10)
 
-        # Publikacja IMU
-        self.imu_publisher = self.create_publisher(Imu, 'imu/data_raw', 10)
+        self.imu_publisher = self.create_publisher(Imu, 'imu/data', 10)
         
-        # Timer do odczytu z Seriala (50Hz)
         self.create_timer(0.02, self.read_serial_data)
 
     def map_value(self, x, in_min, in_max, out_min, out_max):
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
-    def cmd_vel_callback(self, msg):
-        # --- Sterowanie (Ackermann) ---
-        linear_x = msg.linear.x   # Prędkość przód/tył
-        angular_z = msg.angular.z # Skręt
+    def euler_to_quaternion(self, roll, pitch, yaw):
+        qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+        qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
+        qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
+        qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+        return [qx, qy, qz, qw]
 
-        # 1. Obliczanie PWM Silnika
-        # Zakładamy, że linear_x=1.0 to pełna moc. Możesz to przeskalować.
+    def cmd_vel_callback(self, msg):
+        linear_x = msg.linear.x
+        angular_z = msg.angular.z
+
         pwm_val = int(linear_x * self.motor_max)
         pwm_val = max(min(pwm_val, 255), -255)
 
-        # 2. Obliczanie Impulsu Serwa
-        # angular_z > 0 to zazwyczaj w lewo. 
-        # Zakładamy zakres wejściowy od -1.0 (prawo) do 1.0 (lewo) rad/s (uproszczenie)
         if angular_z == 0:
             servo_us = self.servo_center
-        elif angular_z > 0: # Skręt w jedną stronę
-            # Mapuj 0 do 1.0 na center do max
+        elif angular_z > 0:
             servo_us = self.map_value(angular_z, 0.0, 1.0, self.servo_center, self.servo_max)
-        else: # Skręt w drugą stronę
-            # Mapuj -1.0 do 0 na min do center
+        else:
             servo_us = self.map_value(angular_z, -1.0, 0.0, self.servo_min, self.servo_center)
 
         servo_us = int(max(min(servo_us, self.servo_max), self.servo_min))
 
-        # Wyślij do ESP32
         cmd_str = f"{servo_us},{pwm_val}\n"
         self.ser.write(cmd_str.encode('utf-8'))
 
@@ -88,22 +78,23 @@ class RcCarDriver(Node):
                 line = self.ser.readline().decode('utf-8').strip()
                 if line.startswith("IMU,"):
                     parts = line.split(',')
-                    if len(parts) == 7:
+                    if len(parts) == 4:
+                        self.get_logger().info(f'Roll, Pitch, Yaw [deg]: {float(parts[1])}, {float(parts[2])}, {float(parts[3])}')
                         imu_msg = Imu()
                         imu_msg.header.stamp = self.get_clock().now().to_msg()
                         imu_msg.header.frame_id = "imu_link"
                         
-                        # MPU6050 wysyła m/s^2 i rad/s
-                        imu_msg.linear_acceleration.x = float(parts[1])
-                        imu_msg.linear_acceleration.y = float(parts[2])
-                        imu_msg.linear_acceleration.z = float(parts[3])
+                        roll_rad = math.radians(float(parts[1]))
+                        pitch_rad = math.radians(float(parts[2]))
+                        yaw_rad = math.radians(float(parts[3]))
+
+                        q = self.euler_to_quaternion(roll_rad, pitch_rad, yaw_rad)
                         
-                        imu_msg.angular_velocity.x = float(parts[4])
-                        imu_msg.angular_velocity.y = float(parts[5])
-                        imu_msg.angular_velocity.z = float(parts[6])
+                        imu_msg.orientation.x = q[0]
+                        imu_msg.orientation.y = q[1]
+                        imu_msg.orientation.z = q[2]
+                        imu_msg.orientation.w = q[3]
                         
-                        # Nie obliczamy orientacji (Quaternion) tutaj, 
-                        # robi to zazwyczaj imu_filter_madgwick w ROS2
                         self.imu_publisher.publish(imu_msg)
             except Exception as e:
                 self.get_logger().warn(f'Błąd parsowania danych IMU: {e}')

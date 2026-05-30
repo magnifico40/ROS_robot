@@ -1,0 +1,81 @@
+ekf_local:
+  ros__parameters:
+    frequency: 30.0        
+    two_d_mode: true     #2D  
+    publish_tf: true       
+    use_sim_time: true
+    
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    odom0: /odom
+    odom0_twist_rejection_threshold: 2.0
+    odom0_pose_rejection_threshold: 2.0
+    odom0_config: [false,  false,  false,   	#X,Y,Z
+                   false, false, false,   	#roll, pitch, yaw
+                   true,  false, false,   	#poch X,Y,Z
+                   false, false, true,	#poch roll, pitch, yaw
+                   false, false, false]	#2poch X,Y,Z
+
+    
+    imu0: /imu
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false,  false, false]
+
+ekf_global:
+  ros__parameters:
+    frequency: 30.0        
+    two_d_mode: true     #2D  
+    publish_tf: true       
+    use_sim_time: true
+    
+    
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: map
+    predict_to_current_time: true
+    odom0: /odom
+    odom0_twist_rejection_threshold: 2.0
+    odom0_pose_rejection_threshold: 2.0
+    odom0_config: [false,  false,  false,   	#X,Y,Z
+                   false, false, false,   	#roll, pitch, yaw
+                   true,  false, false,   	#poch X,Y,Z
+                   false, false, true,	#poch roll, pitch, yaw
+                   false, false, false]	#2poch X,Y,Z
+
+    
+    imu0: /imu
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false,  false, false]
+                  
+    odom1: /odometry/gps
+    odom1_config: [true, true, false,
+    		    false, false, false,
+    		    false, false, false,
+    		    false, false, false,
+    		    false, false, false]
+
+navsat_transform:
+  ros__parameters:
+    frequency: 30.0
+    use_sim_time: true
+    wait_for_datum: true
+    datum: [52.229700, 21.012200, 0.0] #wspolrzedne bazy
+    transform_timeout: 2.0
+    delay: 2.0
+    
+    
+    #kalibracja
+    magnetic_declination_radians: 0.0 #w symulacji 0, w realu 0.12
+    yaw_offset: 0.0 #w symulacji 0
+    zero_altitude: true
+    publish_filtered_gps: true

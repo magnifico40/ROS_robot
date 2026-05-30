@@ -16,7 +16,9 @@ import cv2
 import os
 import time
 
-MODEL_FILENAME = 'best_model_map_small.pth'
+from memory_profiler import profile
+
+MODEL_FILENAME = 'best_model_map_aft_fix.pth'
 IMG_SIZE = 608
 CONFIDENCE_THRESHOLD = 0.3
 
@@ -57,7 +59,7 @@ def remap_state_dict_keys(state_dict):
 
 def get_model_jetson(num_classes, img_size=608):
     backbone = mobilenet_backbone(
-        backbone_name="mobilenet_v3_small",
+        backbone_name="mobilenet_v3_large",
         pretrained=True,
         trainable_layers=5,
         fpn=True
@@ -144,7 +146,8 @@ class MLObjectDetectionNode(Node):
         self.publisher_compressed = self.create_publisher(CompressedImage, '/ml/detected_image/compressed', 10)
         
         self.prev_time = time.time()
-
+    
+    @profile
     def image_callback(self, msg):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')

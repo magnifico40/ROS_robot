@@ -1,0 +1,4 @@
+SERVER_IP = "16.171.226.101"
+PORT = 7447  
+STOP_INTERVAL = 1.0 #seconds
+MAN_CMD_VEL_INTERVAL = 100 #miliseconds
