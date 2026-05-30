@@ -20,7 +20,7 @@
 #define PIN_ENC_B 10
 #define PIN_ENC_A 11
 
-#define RX1_PIN 12      // RX Mastera
+#define RX1_PIN 12      // RX Master
 #define TX1_PIN 13      // not used
 
 #define PIN_VBAT 4
@@ -32,7 +32,10 @@
 #define ENCODER_CPR 1024
 
 // battery configuration
+// 100k and 6.8k
 #define VBAT_DIV_RATIO ((100.0f + 6.8f) / 6.8f)
+// 47K and 3.3k
+//#define VBAT_DIV_RATIO ((47.0f + 3.3f) / 3.3f)
 #define ADC_REF_VOLTAGE 3.3f
 #define ADC_MAX 4095.0f
 #define BATTERY_UNDERVOLTAGE 30.0f
@@ -64,7 +67,7 @@ String faultReason = "";
 float lastVelocity = 0.0f;
 unsigned long stallStart = 0;
 unsigned long lastBatCheck = 0;
-float filtered_vbat = 42.0f;
+float filtered_vbat = 0.0f;
 unsigned long lastMasterMsg = 0;
 
 // encoder interrupts
@@ -84,7 +87,8 @@ void triggerFault(const char* reason) {
     faultActive = true;
     faultReason = reason;
     motor.disable();
-    Serial.print("FAULT: "); Serial.println(reason);
+    Serial.print("FAULT: "); 
+    Serial.println(reason);
     setLED(255, 0, 0);
   }
 }
@@ -108,8 +112,11 @@ void doMotor(char* cmd)  {
 
 void doReset(char* cmd) {
   if (faultActive) {
-    faultActive = false; faultReason = ""; stallStart = 0;
-    motor.enable(); setLED(0, 0, 255);
+    faultActive = false; 
+    faultReason = ""; 
+    stallStart = 0;
+    motor.enable(); 
+    setLED(0, 0, 255);
     Serial.println("FAULT RESET: Motor Enabled.");
   }
 }
@@ -207,6 +214,7 @@ void setup() {
   motor.linkDriver(&driver);
 
   current_sense.linkDriver(&driver);
+  current_sense.skip_align = true;
   current_sense.init();
   motor.linkCurrentSense(&current_sense);
 
@@ -228,21 +236,29 @@ void setup() {
 
   motor.init();
 
+  uint32_t mv = analogReadMilliVolts(PIN_VBAT);
+  filtered_vbat = (mv / 1000.0f) * VBAT_DIV_RATIO;
+
   // check if battery connected
   while (readBatteryVoltage() < BATTERY_UNDERVOLTAGE) {
-    setLED(255, 100, 0); delay(250); setLED(0, 0, 0); delay(250);
+    setLED(255, 100, 0); 
+    delay(250); 
+    setLED(0, 0, 0); 
+    delay(250);
   }
 
   customCalibration();
-  motor.initFOC();
+  
+  if (motor.initFOC() == 0) {
+    triggerFault("FOC initialize Error");
+  } else {
+    cmdMaster.add('T', doTarget, "Target");
+    cmdPC.add('M', doMotor, "Motor tune");
+    cmdPC.add('R', doReset, "Reset Fault"); 
 
-  // Serial commands
-  cmdMaster.add('T', doTarget, "Target");
-  cmdPC.add('M', doMotor, "Motor tune");
-  cmdPC.add('R', doReset, "Reset Fault");
-
-  setLED(0, 0, 255);
-  lastMasterMsg = millis();
+    setLED(0, 0, 255);
+    lastMasterMsg = millis();
+  }
 }
 
 // loop
@@ -278,8 +294,17 @@ void loop() {
 
     // encoder jump detection
     float vel = sensor.getVelocity();
-    if (fabs(vel - lastVelocity) > ENCODER_MAX_VEL_JUMP) triggerFault("Encoder error");
-    lastVelocity = vel;
+    static uint8_t enc_error_count = 0;
+
+    if (fabs(vel - lastVelocity) > ENCODER_MAX_VEL_JUMP) {
+      enc_error_count++;
+      if (enc_error_count >= 3) {
+        triggerFault("Encoder error - Jump");
+      }
+    } else {
+      enc_error_count = 0;
+      lastVelocity = vel;
+    }
 
     // stall detection
     if (fabs(motor.current.q) > STALL_CURRENT_THRESHOLD && fabs(vel) < STALL_VELOCITY_THRESHOLD && fabs(motor.target) > 0.5f) {
