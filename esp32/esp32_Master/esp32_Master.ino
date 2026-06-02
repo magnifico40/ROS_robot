@@ -17,9 +17,12 @@
 #define IMU_SDA 8
 #define IMU_SCL 9
 
-#define BLDC_PIN 25
+#define BLDC_PIN 21
 #define ESC_STOP 1000
 #define ESC_RUN 1300
+#define ESC_PWM_FREQ 50
+#define ESC_PWM_RES 14
+
 
 Adafruit_MPU6050 mpu;
 HardwareSerial SerialGPS(2);
@@ -88,9 +91,14 @@ uint8_t hexToByte(char c) {
     return 0;
 }
 
+void writeESC(int microseconds) {
+    uint32_t duty = (microseconds * 16383) / 20000;
+    ledcWrite(BLDC_PIN, duty);
+}
+
 void setup() {
     Serial.begin(115200);
-
+    
     Serial0.begin(115200, SERIAL_8N1, L_MOTOR_RX, L_MOTOR_TX);
     Serial1.begin(115200, SERIAL_8N1, R_MOTOR_RX, R_MOTOR_TX);
 
@@ -106,14 +114,8 @@ void setup() {
         esp_now_register_recv_cb((esp_now_recv_cb_t)OnDataRecv);
     }
 
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
-
-    esc.setPeriodHertz(50);
-    esc.attach(BLDC_PIN, 1000, 2000);
-    esc.writeMicroseconds(ESC_STOP);
+    ledcAttach(BLDC_PIN, ESC_PWM_FREQ, ESC_PWM_RES);
+    writeESC(ESC_STOP);
 }
 
 void sendToMotors(float vL_ms, float vR_ms) {
@@ -145,13 +147,13 @@ void processRosCommand(String cmd) {
             SerialGPS.write(b);
         }
     }
-    else if (cmd.startsWith("BLDC,")) {
+    else if (cmd.startsWith("BLDC,") && incomingData.button1 == 1) {
         int status = cmd.substring(5).toInt();
 
         if (status == 1) {
-            esc.writeMicroseconds(ESC_RUN);
+            writeESC(ESC_RUN);
         } else {
-            esc.writeMicroseconds(ESC_STOP);
+            writeESC(ESC_STOP);
         }
     }
 }
@@ -195,7 +197,7 @@ void loop() {
         Serial.printf("IMU,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
             ax_clean, ay_clean, az_clean,
             gx_clean, gy_clean, gz_clean);
-
+    }
     // steering mode (manual/autonomous)
     static unsigned long lastMotorUpdate = 0;
     if (millis() - lastMotorUpdate > 50) {
@@ -203,6 +205,7 @@ void loop() {
 
         if (millis() - lastRcReceive > 500) {
             sendToMotors(0, 0);
+            writeESC(ESC_STOP);
         }
         else if (incomingData.button1 == 0) {
             float throttle = map(incomingData.pot1, 0, 4095, (int)(-MAX_SPEED*100), (int)(MAX_SPEED*100)) / 100.0f;
@@ -212,6 +215,12 @@ void loop() {
             if (abs(steering) < 0.15) steering = 0;
 
             sendToMotors(throttle + steering, throttle - steering);
+
+            if(incomingData.button2 == 1){
+                writeESC(ESC_RUN);
+            }else{
+                writeESC(ESC_STOP);
+            }
         }
     }
 }
