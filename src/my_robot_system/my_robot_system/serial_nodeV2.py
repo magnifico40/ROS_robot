@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, Point
+from std_msgs.msg import Int8
 from sensor_msgs.msg import Imu
 from nmea_msgs.msg import Sentence
 from rtcm_msgs.msg import Message as RtcmMessage
@@ -24,14 +25,15 @@ class RobotHardwareBridge(Node):
         # Serial
         try:
             self.ser = serial.Serial(self.serial_port, self.baud_rate, timeout=0.05)
-            self.get_logger().info(f'Mostek ESP32 uruchomiony na {self.serial_port}')
+            self.get_logger().info(f'ESP32 on port {self.serial_port}')
         except Exception as e:
-            self.get_logger().error(f'Błąd portu: {e}')
+            self.get_logger().error(f'Port error: {e}')
             exit(1)
 
         # Subskrypcje
         self.sub_cmd_vel = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
         self.sub_rtcm = self.create_subscription(RtcmMessage, '/rtcm', self.rtcm_callback, 10)
+        self.sub_mower = self.create_subscription(Int8, '/mower_status', self.mower_callback, 10)
 
         # Publikacje
         self.pub_imu = self.create_publisher(Imu, 'imu/data_raw', 10)
@@ -64,6 +66,14 @@ class RobotHardwareBridge(Node):
                 self.ser.write(rtcm_str.encode('utf-8'))
             except (OSError, serial.SerialException):
                 pass
+
+    def mower_callback(self, msg):
+        status = msg.data
+        cmd_str = f"BLDC,{status}\n"
+        try:
+            self.ser.write(cmd_str.encode('utf-8'))
+        except (OSError, serial.SerialException):
+            pass
 
     def read_serial_data(self):
         try:

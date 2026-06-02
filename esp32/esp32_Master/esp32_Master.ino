@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <Adafruit_MPU6050.h>
 #include <Wire.h>
+#include <ESP32Servo.h>
 
 
 #define MAX_SPEED 2.5f      // m/s
@@ -16,8 +17,13 @@
 #define IMU_SDA 8
 #define IMU_SCL 9
 
+#define BLDC_PIN 25
+#define ESC_STOP 1000
+#define ESC_RUN 1300
+
 Adafruit_MPU6050 mpu;
 HardwareSerial SerialGPS(2);
+Servo esc;
 
 typedef struct struct_message {
     uint16_t pot1;
@@ -99,6 +105,15 @@ void setup() {
     if (esp_now_init() == ESP_OK) {
         esp_now_register_recv_cb((esp_now_recv_cb_t)OnDataRecv);
     }
+
+    ESP32PWM::allocateTimer(0);
+    ESP32PWM::allocateTimer(1);
+    ESP32PWM::allocateTimer(2);
+    ESP32PWM::allocateTimer(3);
+
+    esc.setPeriodHertz(50);
+    esc.attach(BLDC_PIN, 1000, 2000);
+    esc.writeMicroseconds(ESC_STOP);
 }
 
 void sendToMotors(float vL_ms, float vR_ms) {
@@ -128,6 +143,15 @@ void processRosCommand(String cmd) {
         for (int i = 0; i < hex.length(); i += 2) {
             uint8_t b = (hexToByte(hex[i]) << 4) | hexToByte(hex[i + 1]);
             SerialGPS.write(b);
+        }
+    }
+    else if (cmd.startsWith("BLDC,")) {
+        int status = cmd.substring(5).toInt();
+
+        if (status == 1) {
+            esc.writeMicroseconds(ESC_RUN);
+        } else {
+            esc.writeMicroseconds(ESC_STOP);
         }
     }
 }
