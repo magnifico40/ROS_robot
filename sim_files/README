@@ -36,14 +36,20 @@ source install/setup.bash
 ros2 launch obstacle_avoidance2 sim.launch.py  #odpali gazebo, powinien byc widoczny model
 
 otworz nowy terminal
+ros2 run obstacle_avoidance2 fusion
+
+otworz nowy terminal
 ros2 run obstacle_avoidance2 planner
 
 otworz nowy terminal
 ros2 run obstacle_avoidance2 pursuit
 
+otworz nowy terminal
+ros2 run obstacle_avoidance2 avoider
+
 robot powinien ruszyc
 
 
-NAJWAZNIEJSZE PLIKI .py SA W obstacle_avoidance2 I NAZYWAJA SIE planner_node (odpowiedzialny za tworzenie trasy) I pursuit_node (logika podazania za stworzona trasa)
+NAJWAZNIEJSZE PLIKI .py SA W obstacle_avoidance2 I NAZYWAJA SIE planner_node (odpowiedzialny za tworzenie trasy), pursuit_node (logika podazania za stworzona trasa), ml_fusion2 (obecna fuzja) i avoider_node (node do unikania przeszkód)
 MODEL JEST W urdf/robot.xacro
  
