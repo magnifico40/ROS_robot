@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
-#include <Adafruit_MPU6050.h>
+#include <Adafruit_BNO08x.h>
 #include <Wire.h>
 #include <ESP32Servo.h>
 
@@ -18,13 +18,18 @@
 #define IMU_SCL 9
 
 #define BLDC_PIN 21
-#define ESC_STOP 1000
+#define ESC_STOP 900
 #define ESC_RUN 1300
 #define ESC_PWM_FREQ 50
 #define ESC_PWM_RES 14
 
 
-Adafruit_MPU6050 mpu;
+Adafruit_BNO08x bno08x;
+sh2_SensorValue_t sensorValue;
+
+float imu_ax = 0, imu_ay = 0, imu_az = 0;
+float imu_gx = 0, imu_gy = 0, imu_gz = 0;
+
 HardwareSerial SerialGPS(2);
 Servo esc;
 
@@ -39,43 +44,8 @@ struct_message incomingData;
 unsigned long lastRcReceive = 0;
 String inputString = "";
 String gpsBuffer = "";
+bool lastButton1 = 0;
 
-float accelX_offset = 0, accelY_offset = 0, accelZ_offset = 0;
-float gyroX_offset = 0, gyroY_offset = 0, gyroZ_offset = 0;
-
-void calibrateIMU() {
-    int samples = 500;
-    float sumAx = 0, sumAy = 0, sumAz = 0;
-    float sumGx = 0, sumGy = 0, sumGz = 0;
-    
-    for(int i = 0; i < 100; i++) {
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
-        delay(2);
-    }
-
-    for (int i = 0; i < samples; i++) {
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
-        
-        sumAx += a.acceleration.x;
-        sumAy += a.acceleration.y;
-        sumAz += a.acceleration.z;
-        sumGx += g.gyro.x;
-        sumGy += g.gyro.y;
-        sumGz += g.gyro.z;
-        
-        delay(5);
-    }
-    
-    accelX_offset = sumAx / samples;
-    accelY_offset = sumAy / samples;
-    accelZ_offset = (sumAz / samples) - 9.81f; 
-    
-    gyroX_offset = sumGx / samples;
-    gyroY_offset = sumGy / samples;
-    gyroZ_offset = sumGz / samples;
-}
 
 void OnDataRecv(const esp_now_recv_info *info, const uint8_t *data, int len) {
     if (len == sizeof(struct_message)) {
@@ -105,8 +75,12 @@ void setup() {
     SerialGPS.begin(115200, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
     Wire.begin(IMU_SDA, IMU_SCL);
-    if(mpu.begin()) {
-        calibrateIMU();
+    if (!bno08x.begin_I2C(0x4A, &Wire) && !bno08x.begin_I2C(0x4B, &Wire)) {
+        Serial.println("Error: BNO085 not found");
+    } else {
+        bno08x.enableReport(SH2_ACCELEROMETER, 20000);
+        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 20000);
+        Serial.println("BNO085 initialized");
     }
 
     WiFi.mode(WIFI_STA);
@@ -179,25 +153,35 @@ void loop() {
         }
     }
 
+    if (bno08x.wasReset()) {
+        bno08x.enableReport(SH2_ACCELEROMETER, 20000);
+        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 20000);
+    }
+
+    if (bno08x.getSensorEvent(&sensorValue)) {
+        switch (sensorValue.sensorId) {
+            case SH2_ACCELEROMETER:
+                imu_ax = sensorValue.un.accelerometer.x;
+                imu_ay = sensorValue.un.accelerometer.y;
+                imu_az = sensorValue.un.accelerometer.z;
+                break;
+            case SH2_GYROSCOPE_CALIBRATED:
+                imu_gx = sensorValue.un.gyroscope.x;
+                imu_gy = sensorValue.un.gyroscope.y;
+                imu_gz = sensorValue.un.gyroscope.z;
+                break;
+        }
+    }
+
     // send imu data
     static unsigned long lastImu = 0;
     if (millis() - lastImu > 20) {
         lastImu = millis();
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
-        
-        float ax_clean = a.acceleration.x - accelX_offset;
-        float ay_clean = a.acceleration.y - accelY_offset;
-        float az_clean = a.acceleration.z - accelZ_offset;
-        
-        float gx_clean = g.gyro.x - gyroX_offset;
-        float gy_clean = g.gyro.y - gyroY_offset;
-        float gz_clean = g.gyro.z - gyroZ_offset;
-
         Serial.printf("IMU,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
-            ax_clean, ay_clean, az_clean,
-            gx_clean, gy_clean, gz_clean);
+            imu_ax, imu_ay, imu_az,
+            imu_gx, imu_gy, imu_gz);
     }
+
     // steering mode (manual/autonomous)
     static unsigned long lastMotorUpdate = 0;
     if (millis() - lastMotorUpdate > 50) {
@@ -222,5 +206,9 @@ void loop() {
                 writeESC(ESC_STOP);
             }
         }
+        else if (incomingData.button1 == 1 && lastButton1 == 0){
+            writeESC(ESC_STOP);
+        }
+        lastButton1 = incomingData.button1;
     }
 }
