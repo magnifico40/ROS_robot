@@ -142,8 +142,24 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0 0 ${chassis_height + lidar_height + 0.015}" rpy="0 0 ${pi}"/>
+    <origin xyz="0 0 ${chassis_height + lidar_height + 0.04}" rpy="0 0 0"/>
   </joint>
+
+  <link name="gps_link">
+    <visual>
+      <geometry>
+        <box size="0.02 0.02 0.01"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+  </link>
+
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <origin xyz="0.1 0 ${chassis_height}" rpy="0 0 0"/>
+  </joint>
+
 
   <link name="imu_link">
     </link>
@@ -167,7 +183,7 @@
   <joint name="camera_joint" type="fixed">
   	<parent link="base_link"/>
   	<child link="camera_link"/>
-  	<origin xyz="0.2 0 0.1" rpy="0 0 0"/>
+  	<origin xyz="0.2 0 0.05" rpy="0 0 0"/>
   </joint>
   
   <joint name="camera_optical_joint" type="fixed">
@@ -253,10 +269,11 @@
         <ros>
           <remapping>~/out:=/gps/fix</remapping>
         </ros>
-        <latitude_deg>52.229700</latitude_deg>
+        <frame_name>gps_link</frame_name>
+       <!--<latitude_deg>52.229700</latitude_deg>
     	<longitude_deg>21.012200</longitude_deg>
     	<elevation>0.0</elevation>
-    	<plugin_variance>0.01</plugin_variance>
+    	<plugin_variance>0.01</plugin_variance>--> 
       </plugin>
     </sensor>
   </gazebo>
@@ -268,8 +285,8 @@
     <camera name="head">
       <horizontal_fov>1.3962634</horizontal_fov>
       <image>
-        <width>800</width>
-        <height>600</height>
+        <width>416</width>
+        <height>416</height>
         <format>R8G8B8</format>
       </image>
       <clip>

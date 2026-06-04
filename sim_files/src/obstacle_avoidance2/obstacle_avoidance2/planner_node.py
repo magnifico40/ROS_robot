@@ -14,7 +14,6 @@ class Planner(Node):
 
         self.path_publisher = self.create_publisher(Path, '/planned_path', 10)
         self.timer = self.create_timer(2.0, self.publish_path)
-
         self.generated_path_msg = self.generate_f2c_path()
         self.get_logger().info("Ścieżka gotowa do publikacji!")
 

@@ -23,11 +23,11 @@ class Pursuit(Node):
         self.angular_speed = 0.4
         self.robot_width = 0.4274
 
-        self.lookahead_dist = 0.2
+        self.lookahead_dist = 0.5
         self.curr_target = 0
 
 
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_raw', 10)
         self.get_logger().info('Węzeł zygzaka uruchomiony')
         self.timer = self.create_timer(0.1, self.control_loop)
 
@@ -87,7 +87,7 @@ class Pursuit(Node):
             angle_to_pt = math.atan2(dy, dx)
             angle_diff = angle_to_pt - self.curr_yaw
             angle_diff = math.atan2(math.sin(angle_diff), math.cos(angle_diff)) #zapewnia ze dostajemy najmniejsza wersje kata (350 w lewo = 10 prawo)
-            if abs(angle_diff) < math.pi/4.0:	#ignorujemy te ktore odstaja o ponad 45 stopni od przodu
+            if abs(angle_diff) < math.pi*0.4:	#ignorujemy te ktore odstaja o ponad 45 stopni od przodu
                 dist = math.hypot(dx,dy)
                 if dist < min_dist:
                     min_dist = dist
@@ -122,7 +122,7 @@ class Pursuit(Node):
         angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
 
 
-        if abs(angle_error>(math.pi/8.0)):
+        if abs(angle_error)>(math.pi/8.0): #około 22.5 stopnia
             twist.linear.x = 0.0
             twist.angular.z = math.copysign(self.angular_speed,angle_error) #daje wartosc pierwszej ale znak drugiej liczby
             self.get_logger().info("Skrecamy")

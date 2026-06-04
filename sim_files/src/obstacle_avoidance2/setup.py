@@ -16,6 +16,8 @@ setup(
         (os.path.join('share', package_name, 'urdf'), glob('urdf/*.xacro')),
         (os.path.join('share', package_name, 'meshes'), glob('meshes/*')),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'models'), glob('models/*.engine')),
+        (os.path.join('share', package_name, 'worlds'), glob('worlds/*.world')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -26,10 +28,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-        	'avoider = obstacle_avoidance2.obst_avoid:main',
-        	'zigzag = obstacle_avoidance2.boust:main',
+        	'avoider = obstacle_avoidance2.avoider_node:main',
         	'pursuit = obstacle_avoidance2.pursuit_node:main',
-        	'planner = obstacle_avoidance2.planner_node:main'
+            'fusion = obstacle_avoidance2.ml_fusion2:main',
+            'planner =  obstacle_avoidance2.planner_node:main',
+
         ],
     },
 )
