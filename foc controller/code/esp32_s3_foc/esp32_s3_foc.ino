@@ -21,7 +21,7 @@
 #define PIN_ENC_A 11
 
 #define RX1_PIN 12      // RX Master
-#define TX1_PIN 13      // not used
+#define TX1_PIN 13      // TX Master
 
 #define PIN_VBAT 4
 #define PIN_WS2812 21
@@ -69,6 +69,8 @@ unsigned long stallStart = 0;
 unsigned long lastBatCheck = 0;
 float filtered_vbat = 0.0f;
 unsigned long lastMasterMsg = 0;
+unsigned long last_odom_time = 0;
+const int ODOM_INTERVAL_MS = 50; // 20Hz
 
 // encoder interrupts
 void doA() { sensor.handleA(); }
@@ -313,5 +315,14 @@ void loop() {
     } else { stallStart = 0; }
 
     motor.move();
+
+    if (millis() - last_odom_time > ODOM_INTERVAL_MS) {
+      last_odom_time = millis();
+      
+      Serial1.print("O ");
+      Serial1.print(motor.shaft_angle, 3); // angle (rad)
+      Serial1.print(" ");
+      Serial1.println(motor.shaft_velocity, 3); // angular velocity (rad/s)
+    }
   }
 }

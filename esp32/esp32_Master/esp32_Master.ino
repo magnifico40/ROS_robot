@@ -3,8 +3,6 @@
 #include <WiFi.h>
 #include <Adafruit_BNO08x.h>
 #include <Wire.h>
-#include <ESP32Servo.h>
-
 
 #define MAX_SPEED 2.5f      // m/s
 #define WHEEL_RADIUS 0.099f // 19,8 cm / 2
@@ -23,15 +21,18 @@
 #define ESC_PWM_FREQ 50
 #define ESC_PWM_RES 14
 
-
 Adafruit_BNO08x bno08x;
 sh2_SensorValue_t sensorValue;
 
 float imu_ax = 0, imu_ay = 0, imu_az = 0;
 float imu_gx = 0, imu_gy = 0, imu_gz = 0;
+float imu_qr = 1.0, imu_qi = 0, imu_qj = 0, imu_qk = 0;
+
+// ZMIENNE ODOMETRII Z KÓŁ
+float odom_L_angle = 0.0f, odom_L_vel = 0.0f;
+float odom_R_angle = 0.0f, odom_R_vel = 0.0f;
 
 HardwareSerial SerialGPS(2);
-Servo esc;
 
 typedef struct struct_message {
     uint16_t pot1;
@@ -42,10 +43,13 @@ typedef struct struct_message {
 
 struct_message incomingData;
 unsigned long lastRcReceive = 0;
+
+// Bufory odczytu
 String inputString = "";
 String gpsBuffer = "";
+String lMotorBuffer = "";
+String rMotorBuffer = "";
 bool lastButton1 = 0;
-
 
 void OnDataRecv(const esp_now_recv_info *info, const uint8_t *data, int len) {
     if (len == sizeof(struct_message)) {
@@ -67,19 +71,32 @@ void writeESC(int microseconds) {
 }
 
 void setup() {
-    Serial.begin(115200);
+    Serial.setRxBufferSize(4096);
+    Serial.begin(230400);
     
     Serial0.begin(115200, SERIAL_8N1, L_MOTOR_RX, L_MOTOR_TX);
     Serial1.begin(115200, SERIAL_8N1, R_MOTOR_RX, R_MOTOR_TX);
 
+    SerialGPS.setRxBufferSize(2048);
+    SerialGPS.setTxBufferSize(1024);
     SerialGPS.begin(115200, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
+    // Ochrona pamięci przed fragmentacją przy ciągłym dodawaniu znaków
+    inputString.reserve(256);
+    gpsBuffer.reserve(256);
+    lMotorBuffer.reserve(64);
+    rMotorBuffer.reserve(64);
+
+    // Szybka magistrala I2C
     Wire.begin(IMU_SDA, IMU_SCL);
+    Wire.setClock(400000); 
+
     if (!bno08x.begin_I2C(0x4A, &Wire) && !bno08x.begin_I2C(0x4B, &Wire)) {
         Serial.println("Error: BNO085 not found");
     } else {
-        bno08x.enableReport(SH2_ACCELEROMETER, 20000);
-        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 20000);
+        bno08x.enableReport(SH2_ACCELEROMETER, 100000);
+        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 100000);
+        bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 100000);
         Serial.println("BNO085 initialized");
     }
 
@@ -105,25 +122,53 @@ void sendToMotors(float vL_ms, float vR_ms) {
     Serial1.println(omegaR, 2);
 }
 
-void processRosCommand(String cmd) {
+// Parsowanie odometri z silników Format: "O kat predkosc"
+void parseLeftMotorOdom(String &cmd) {
+    if (cmd.startsWith("O ")) {
+        int spaceIdx = cmd.indexOf(' ', 2);
+        if (spaceIdx > 0) {
+            odom_L_angle = cmd.substring(2, spaceIdx).toFloat();
+            odom_L_vel = cmd.substring(spaceIdx + 1).toFloat();
+        }
+    }
+}
+
+void parseRightMotorOdom(String &cmd) {
+    if (cmd.startsWith("O ")) {
+        int spaceIdx = cmd.indexOf(' ', 2);
+        if (spaceIdx > 0) {
+            odom_R_angle = cmd.substring(2, spaceIdx).toFloat();
+            odom_R_vel = cmd.substring(spaceIdx + 1).toFloat();
+        }
+    }
+}
+
+void processRosCommand(String &cmd) {
     if (cmd.startsWith("M,") && incomingData.button1 == 1) {
         int firstComma = cmd.indexOf(',');
         int secondComma = cmd.indexOf(',', firstComma + 1);
-        float vL = cmd.substring(firstComma + 1, secondComma).toFloat();
-        float vR = cmd.substring(secondComma + 1).toFloat();
-
-        sendToMotors(vL, vR);
+        if (firstComma > 0 && secondComma > firstComma) {
+            float vL = cmd.substring(firstComma + 1, secondComma).toFloat();
+            float vR = cmd.substring(secondComma + 1).toFloat();
+            sendToMotors(vL, vR);
+        }
     }
     else if (cmd.startsWith("RTCM,")) {
-        String hex = cmd.substring(5);
-        for (int i = 0; i < hex.length(); i += 2) {
-            uint8_t b = (hexToByte(hex[i]) << 4) | hexToByte(hex[i + 1]);
-            SerialGPS.write(b);
+        cmd.trim();
+        const char* hexStr = cmd.c_str() + 5; 
+        size_t hexLen = strlen(hexStr);
+        size_t dataLen = hexLen / 2;
+        
+        if (dataLen > 0 && dataLen < 2000) {
+            uint8_t binBuffer[2000]; 
+            for (size_t i = 0; i < dataLen; i++) {
+                binBuffer[i] = (hexToByte(hexStr[i * 2]) << 4) | hexToByte(hexStr[i * 2 + 1]);
+            }
+            SerialGPS.write(binBuffer, dataLen);
         }
     }
     else if (cmd.startsWith("BLDC,") && incomingData.button1 == 1) {
         int status = cmd.substring(5).toInt();
-
         if (status == 1) {
             writeESC(ESC_RUN);
         } else {
@@ -133,6 +178,7 @@ void processRosCommand(String cmd) {
 }
 
 void loop() {
+    // ASYNCHRONICZNY ODCZYT ROS
     while (Serial.available()) {
         char c = Serial.read();
         if (c == '\n') {
@@ -143,22 +189,47 @@ void loop() {
         }
     }
 
-    // send gps data
+    // ASYNCHRONICZNY ODCZYT GPS
     while (SerialGPS.available()) {
         char c = SerialGPS.read();
         gpsBuffer += c;
         if (c == '\n') {
-            Serial.print(gpsBuffer);
-            gpsBuffer = "";
+            Serial.print(gpsBuffer); 
+            gpsBuffer = ""; 
         }
     }
 
-    if (bno08x.wasReset()) {
-        bno08x.enableReport(SH2_ACCELEROMETER, 20000);
-        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 20000);
+    // ASYNCHRONICZNY ODCZYT ODOMETRII - LEWE KOŁO
+    while (Serial0.available()) {
+        char c = Serial0.read();
+        if (c == '\n') {
+            parseLeftMotorOdom(lMotorBuffer);
+            lMotorBuffer = "";
+        } else {
+            lMotorBuffer += c;
+        }
     }
 
-    if (bno08x.getSensorEvent(&sensorValue)) {
+    // ASYNCHRONICZNY ODCZYT ODOMETRII - PRAWE KOŁO
+    while (Serial1.available()) {
+        char c = Serial1.read();
+        if (c == '\n') {
+            parseRightMotorOdom(rMotorBuffer);
+            rMotorBuffer = "";
+        } else {
+            rMotorBuffer += c;
+        }
+    }
+
+    // OBSŁUGA RESTARTU IMU
+    if (bno08x.wasReset()) {
+        bno08x.enableReport(SH2_ACCELEROMETER, 100000);
+        bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, 100000);
+        bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 100000);
+    }
+
+    // ZDEJMOWANIE CAŁEJ KOLEJKI Z BNO085
+    while (bno08x.getSensorEvent(&sensorValue)) {
         switch (sensorValue.sensorId) {
             case SH2_ACCELEROMETER:
                 imu_ax = sensorValue.un.accelerometer.x;
@@ -170,19 +241,35 @@ void loop() {
                 imu_gy = sensorValue.un.gyroscope.y;
                 imu_gz = sensorValue.un.gyroscope.z;
                 break;
+            case SH2_GAME_ROTATION_VECTOR:
+                imu_qr = sensorValue.un.gameRotationVector.real;
+                imu_qi = sensorValue.un.gameRotationVector.i;
+                imu_qj = sensorValue.un.gameRotationVector.j;
+                imu_qk = sensorValue.un.gameRotationVector.k;
+                break;
         }
     }
 
-    // send imu data
+    // PUBLIKOWANIE DANYCH IMU DO ROS
     static unsigned long lastImu = 0;
-    if (millis() - lastImu > 20) {
+    if (millis() - lastImu >= 100) {
         lastImu = millis();
-        Serial.printf("IMU,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
-            imu_ax, imu_ay, imu_az,
-            imu_gx, imu_gy, imu_gz);
+        Serial.printf("IMU,%.4f,%.4f,%.4f,%.4f\n", 
+            //imu_ax, imu_ay, imu_az,
+            //imu_gx, imu_gy, imu_gz,
+            imu_qr, imu_qi, imu_qj, imu_qk);
     }
 
-    // steering mode (manual/autonomous)
+    // PUBLIKOWANIE ODOMETRII DO ROS - 20Hz
+    static unsigned long lastOdomOut = 0;
+    if (millis() - lastOdomOut >= 50) {
+        lastOdomOut = millis();
+        Serial.printf("ODOM,%.3f,%.3f,%.3f,%.3f\n", 
+                      odom_L_angle, odom_L_vel, 
+                      odom_R_angle, odom_R_vel);
+    }
+
+    // BEZPIECZEŃSTWO I STEROWANIE MANUALNE
     static unsigned long lastMotorUpdate = 0;
     if (millis() - lastMotorUpdate > 50) {
         lastMotorUpdate = millis();
