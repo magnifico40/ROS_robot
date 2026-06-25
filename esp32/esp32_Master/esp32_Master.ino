@@ -254,9 +254,9 @@ void loop() {
     static unsigned long lastImu = 0;
     if (millis() - lastImu >= 100) {
         lastImu = millis();
-        Serial.printf("IMU,%.4f,%.4f,%.4f,%.4f\n", 
-            //imu_ax, imu_ay, imu_az,
-            //imu_gx, imu_gy, imu_gz,
+        Serial.printf("IMU,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", 
+            imu_ax, imu_ay, imu_az,
+            imu_gx, imu_gy, imu_gz,
             imu_qr, imu_qi, imu_qj, imu_qk);
     }
 
