@@ -39,3 +39,13 @@ core
 backup/
 backeup/
 old/
+
+src/angles/
+src/diagnostics/
+src/geographic_info/
+src/nmea_msgs/
+src/nmea_navsat_driver/
+src/ntrip_client/
+src/robot_localization/
+src/rtcm_msgs/
+src/teleop_twist_keyboard/
