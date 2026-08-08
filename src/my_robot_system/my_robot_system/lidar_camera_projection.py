@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
-#from ros2_camera_lidar_fusion.read_yaml import extract_configuration
-import os
+import os, yaml
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 import cv2
 import numpy as np
-import yaml
 
-from sensor_msgs.msg import Image, LaserScan, CompressedImage
-from cv_bridge import CvBridge
+from sensor_msgs.msg import LaserScan, CompressedImage
+from ament_index_python.packages import get_package_share_directory
 
-from ros2_camera_lidar_fusion.read_yaml import extract_configuration
+def extract_configuration():
+    config_file = os.path.join(
+        get_package_share_directory('my_robot_system'),
+        'config',
+        'general_configuration.yaml'
+    )
+
+    with open(config_file, 'r') as file:
+        config = yaml.safe_load(file)
+
+    return config
 
 def load_extrinsic_matrix(yaml_path: str) -> np.ndarray:
     if not os.path.isfile(yaml_path):
@@ -61,7 +69,6 @@ def laserscan_to_xyz_array(scan_msg: LaserScan, skip_rate: int = 1) -> np.ndarra
     points = np.column_stack((x, y, z))
     return points.astype(np.float32)
 
-
 class LidarCameraProjectionNode(Node):
     def __init__(self):
         super().__init__('lidar_camera_projection_node')
@@ -98,13 +105,11 @@ class LidarCameraProjectionNode(Node):
             depth=1
         )
 
-        self.create_subscription(LaserScan, lidar_topic, self.lidar_callback, qos_sensor)
-        self.create_subscription(Image, image_topic, self.image_callback, qos_reliable)
+        self.create_subscription(LaserScan, lidar_topic, self.lidar_callback, 10)
+        self.create_subscription(CompressedImage, image_topic, self.image_callback, 10)
 
-        self.pub_image = self.create_publisher(Image, projected_topic, 10)
         self.pub_compressed = self.create_publisher(CompressedImage, projected_topic + '/compressed', 10)
         
-        self.bridge = CvBridge()
         self.skip_rate = 2 
 
     def lidar_callback(self, msg):
@@ -112,13 +117,14 @@ class LidarCameraProjectionNode(Node):
 
     def image_callback(self, image_msg):
         if self.latest_scan_msg is None:
+            self.get_logger().info(f'no lidar')
             return
 
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().error(f"CV Bridge error: {e}")
-            return
+        np_arr = np.frombuffer(image_msg.data, np.uint8)
+        cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        if cv_image is None:
+             self.get_logger().info(f'error decoding img')
 
         xyz_lidar = laserscan_to_xyz_array(self.latest_scan_msg, skip_rate=self.skip_rate)
         
@@ -160,10 +166,6 @@ class LidarCameraProjectionNode(Node):
                     color = (b, g, r)
                     
                     cv2.circle(cv_image, (u_int, v_int), 3, color, -1)
-
-        out_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding='bgr8')
-        out_msg.header = image_msg.header
-        self.pub_image.publish(out_msg)
 
         success, encoded_img = cv2.imencode('.jpg', cv_image)
         if success:

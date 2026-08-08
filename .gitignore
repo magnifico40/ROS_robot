@@ -27,3 +27,15 @@ AMENT_IGNORE
 *.pth
 
 **/__pycache__/
+
+
+rosbag2_*/
+*.db3
+*.engine
+*.onnx
+core
+*.dat
+*copy.yaml
+backup/
+backeup/
+old/

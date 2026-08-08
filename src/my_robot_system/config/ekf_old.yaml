@@ -1,0 +1,31 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 10.0 #30.0 # Filtr będzie działał z częstotliwością 30 Hz
+    sensor_timeout: 0.1
+    two_d_mode: true # Jesteśmy pojazdem naziemnym, ignorujemy latanie (oś Z)
+    publish_tf: true # Pozwalamy EKF na publikowanie drzewa transformacji
+
+    map_frame: map              # Globalna mapa ze stałym początkiem
+    odom_frame: odom            # Lokalna odometria
+    base_link_frame: base_link  # Środek robota
+    world_frame: map            # Łączymy wszystko względem mapy (bo mamy GPS)
+
+    # --- 1. Konfiguracja IMU (Twój BNO085) ---
+    imu0: /imu/data_raw
+    # Format macierzy: [X, Y, Z, Roll, Pitch, Yaw, Vx, Vy, Vz, Vroll, Vpitch, Vyaw, Ax, Ay, Az]
+    imu0_config: [false, false, false, # Ignorujemy pozycję XYZ (IMU jej nie mierzy)
+                  true,  true,  true,  # Bierzemy orientację z kwaternionów
+                  false, false, false, # Ignorujemy prędkość liniową z IMU
+                  true,  true,  true,  # Bierzemy prędkość kątową (żyroskop)
+                  false,  false,  false]  #truex3 # Bierzemy przyspieszenie liniowe
+    imu0_differential: false 
+    imu0_relative: true # WAŻNE: Mówi filtrowi, że pierwsze Yaw to nasze "lokalne" 0 stopni (dla GAME_ROTATION_VECTOR)
+
+    # --- 2. Konfiguracja GPS (Przetworzonego na metry) ---
+    odom0: /odometry/gps
+    odom0_config: [true,  true,  false, # Bierzemy globalną pozycję X i Y w metrach
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
